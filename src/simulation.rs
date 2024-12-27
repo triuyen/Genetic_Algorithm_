@@ -10,8 +10,25 @@ const POPULATION_SIZE:usize = 10;
 const TARGET:usize = 80;
 const MAX_GENERATIONS:usize = 1000;
 
-//use crate::data_genom;
-//use crate::data_genom::color_data_genes;
+// All components
+#[derive(Component)]
+struct CubeAttributes {
+    color_group: usize, // Attribute to determine the color group
+}
+
+#[derive(Component)]
+struct Mover {
+    velocity: Vec3,
+}
+
+#[derive(Default)]
+struct Individual {
+    genes: String,
+    fitness: usize,
+    age: usize,
+    color: Color,
+}
+
 pub struct InitPlugin;
 
 impl Plugin for InitPlugin {
@@ -26,39 +43,81 @@ fn spawn_first_gen(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // Intitalize random number generator
     let mut rng = rand::thread_rng();
-
     for _ in 0..POPULATION_SIZE {
-        // Generate random position for spawning
-        let random_x = rng.gen_range(-3.0..5.0); // Random X between -5 and 5
-        let random_y = rng.gen_range(-5.0..5.0);  // Random Y between 0 and 3
-        let random_z = rng.gen_range(-3.0..5.0); // Random Z between -5 and 5
-        
+        // Spawn the parent cube
+        let random_x = rng.gen_range(-3.0..5.0);
+        let random_y = rng.gen_range(-5.0..5.0);
+        let random_z = rng.gen_range(-3.0..5.0);
 
         let velocity = Vec3::new(
             rng.gen_range(-0.1..0.1),
             rng.gen_range(-0.1..0.1),
             rng.gen_range(-0.1..0.1),
         );
-        
-        let gen = PbrBundle {
+
+        let parent_position = Vec3::new(random_x, random_y, random_z);
+
+        // Generate the material for the parent (cube 1)
+        let parent_color_group = rng.gen_range(0..5); // Random color group for the parent cube
+        let parent_material = generate_material(parent_color_group, &mut materials);
+
+        // Spawn the parent cube
+        let parent_entity = commands
+            .spawn(PbrBundle {
+                mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+                material: parent_material,
+                transform: Transform {
+                    translation: parent_position,
+                    scale: Vec3::splat(0.5),
+                    ..default()
+                },
+                ..default()
+            })
+            .insert(Mover { velocity })
+            .id(); // Save the entity ID to use as a parent
+
+        // Generate the material for the child (cube 2)
+        let child_color_group = rng.gen_range(0..5); // Random color group for the child cube
+        let child_material = generate_material(child_color_group, &mut materials);
+
+        // Spawn the second mesh slightly offset from the first
+        let children = commands.spawn(PbrBundle {
             mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-            material: materials.add(Color::srgb(random_x, random_z, random_y)),
+            material: child_material,
             transform: Transform {
-                translation: Vec3::new(random_x, 0.0, random_z),  // Position
-                rotation: Quat::IDENTITY,                      // No rotation
-                scale: Vec3::new(0.5, 0.5, 0.5),       // Scale (X: 2.0, Y: 1.0, Z: 1.0)
+                translation: Vec3::new(1.0, 0.0, 0.0), //+ Vec3::new(0.01, 0.0, 0.0), // Offset to the side
+                scale: Vec3::splat(1.0),
+                ..default()
             },
             ..default()
-        };
-    commands.spawn(gen).insert(Mover { velocity });
+        })
+        .id();
+
+        // Parent the child to the parent cube
+        commands.entity(parent_entity).add_child(children);
     }
 }
 
-#[derive(Component)]
-struct Mover {
-    velocity: Vec3,
+// generate color for the cubes.
+fn generate_material(
+    color_group: usize,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+) -> Handle<StandardMaterial> {
+    // Generate a color based on the color group
+    let color = match color_group {
+        0 => Color::srgb(1.0, 0.0, 0.0), // Red
+        1 => Color::srgb(0.0, 1.0, 0.0), // Green
+        2 => Color::srgb(0.0, 0.0, 1.0), // Blue
+        3 => Color::srgb(1.0, 1.0, 0.0), // Yellow
+        _ => Color::srgb(1.0, 1.0, 1.0), // Default White
+    };
+
+    // Create and return a new material
+    materials.add(StandardMaterial {
+        base_color: color,
+        ..default()
+    })
 }
 
 fn move_cubes(mut query: Query<(&Mover, &mut Transform)>, time: Res<Time>) {
@@ -82,13 +141,7 @@ fn move_cubes(mut query: Query<(&Mover, &mut Transform)>, time: Res<Time>) {
     }
 }
 
-#[derive(Default)]
-struct Individual {
-    genes: String,
-    fitness: usize,
-    age: usize,
-    color: Color,
-}
+
 
 fn create_individual(
     mut genes: &str,
@@ -114,7 +167,6 @@ fn reproduction_Individual(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // gene slicing
-    
     let current_Individual = create_individual("ABDE");
     println!(" genes : {}",current_Individual.genes);
     // Set the position for the cube
