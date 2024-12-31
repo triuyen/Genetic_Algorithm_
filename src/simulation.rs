@@ -38,7 +38,8 @@ impl Plugin for InitPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_first_gen)
             .add_systems(Update, move_cubes)
-            .add_systems(Update, evaluate_fitness);
+            .add_systems(Update, evaluate_fitness)
+            .add_systems(Update, reproduction);
     }
 }
 
@@ -131,6 +132,7 @@ fn generate_material(
     })
 }
 
+// Update the cubes' positions
 fn move_cubes(mut query: Query<(&Mover, &mut Transform)>, time: Res<Time>) {
     for (mover, mut transform) in query.iter_mut() {
         transform.translation += mover.velocity * time.delta_seconds();
@@ -153,6 +155,8 @@ fn move_cubes(mut query: Query<(&Mover, &mut Transform)>, time: Res<Time>) {
 }
 
 
+// evaluate weither the gene is yellow or not 
+// if not the gene will be removed. If any yellow they will be kept
 fn evaluate_fitness(
     mut commands: Commands,
     mut query: Query<(Entity, &Handle<StandardMaterial>, Option<&Parent>, Option<&Children>)>,
@@ -207,104 +211,51 @@ fn evaluate_fitness(
 }
 
 
-// // Evaluation fo fitness // in this case if there is Yellow ? // is it all Yellow ?
-// fn evaluate_fitness(
-//     mut commands: Commands,
-//     mut query: Query<(Entity, &Handle<StandardMaterial>, Option<&ParentCube>, Option<&ChildCube>)>,
-//     mut materials: ResMut<Assets<StandardMaterial>>,
-// ) {
-//     let mut yellow_count = 0;
-//     let mut total_cubes = 0;
-//     let mut is_yellow = false;
 
-//     let yellow = Color::srgb(1.0, 1.0, 0.0); // Yellow color
+// Perform reproduction using arithmetic crossover __________________________________________________________
+fn reproduction(
+    mut commands: Commands,
+    mut query: Query<(&CubeAttributes, &Transform), With<ParentCube>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+) {
+    let mut rng = rand::thread_rng();
+    let mut new_cubes = Vec::new();
+    let parents: Vec<_> = query.iter().collect();
 
-//     for (entity, materialhandle,parent, children) in query.iter() {
-//         total_cubes += 1;
+    // Pair up parents for crossover
+    for i in (0..parents.len()).step_by(2) {
+        if i + 1 < parents.len() {
+            let (parent1, transform1) = parents[i];
+            let (parent2, transform2) = parents[i + 1];
 
-//         // Access the material from the handle
-//         if let Some(material) = materials.get(materialhandle)
-//         {
-//             let color = material.base_color;
-//             // Check if the cube's color is close to yellow
-//             if color == yellow {
-//                 let is_yellow = entity;
-//                 yellow_count += 1;
-//             }
+            // Arithmetic crossover for color groups
+            let alpha = rng.gen_range(0.0..=1.0);
+            let child_color_group = (alpha * parent1.color_group as f32
+                + (1.0 - alpha) * parent2.color_group as f32)
+                .round() as u8;
 
-//             // If the current entity is part of a parent-child relationship
-//             if let Some(parent) = parent{
-//                 // if parent cube is not yellow and Children is not yellow delete the children
-//                 if !is_yellow{
-//                     commands.entity(entity).despawn(); // Despawn parent;
-//                     for &child in children.iter() {
-                        
-//                         if &child != is_yellow {
-//                             commands.entity(&child).despawn(); // Despawn children;
-//                         }
-//                     }
-//                 }
-//             // If this is a child entity (not a parent)
-//             else if let Some(child) = children {
-//                 // If the child cube is not yellow , delete the child
-//                 if !is_yellow {
-//                     commands.entity(entity).despawn(); // Despawn child
-//                 }
-//             }
-//         }
-//     }
+            let child_position = (transform1.translation + transform2.translation) / 2.0;
 
-// }
-// }
+            new_cubes.push((child_color_group, child_position));
+        }
+    }
 
-
-
-
-
-// fn create_individual(
-//     mut genes: &str,
-// ) -> Individual {
-//     Individual {
-//         genes: genes.to_string(), // Example genes
-//         fitness: 100,                // Initial fitness
-//         age: 100,                    // Initial age
-//         color: Color::srgb(0.5, 0.2, 0.8), // Example color (purple-like)
-//     }
-// }
-
-// fn slicing_genes(gene1:&str, gene2:&str) -> String {
-//     let mut rng = rand::thread_rng();
-//     let slice_point = rng.gen_range(0..gene1.len());
-//     let new_gene = gene1[0..slice_point].to_string() + &gene2[slice_point..];
-//     return new_gene;
-// }
-
-// fn reproduction_Individual(
-//     mut commands: Commands,
-//     asset_server: Res<AssetServer>,
-//     mut materials: ResMut<Assets<StandardMaterial>>,
-// ) {
-//     // gene slicing
-//     let current_Individual = create_individual("ABDE");
-//     println!(" genes : {}",current_Individual.genes);
-//     // Set the position for the cube
-//     let position = Vec3::new(0.0, 0.0, 0.0);
-//     // Check if the fitness is greater than 80
-//     if current_Individual.fitness > 80{
-//         // Create a PbrBundle for the cube
-//         commands.spawn(PbrBundle {
-//             mesh: asset_server.load("models/cube.glb#Mesh0/Primitive0"), // Specify GLTF mesh path
-//             material: materials.add(StandardMaterial {
-//                 base_color: Color::rgb(0.0, 0.0, 1.0),
-//                 ..Default::default()
-//             }),
-//             transform: Transform {
-//                 translation: position,
-//                 rotation: Quat::IDENTITY,
-//                 scale: Vec3::splat(0.1),
-//             },
-//         ..Default::default()
-//         });
-//     }
-// }
-
+    // Spawn new cubes
+    for (color_group, position) in new_cubes {
+        let material = generate_material(color_group, &mut materials);
+        commands.spawn(PbrBundle {
+            mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+            material,
+            transform: Transform {
+                translation: position,
+                ..default()
+            },
+            ..default()
+        })
+        .insert(CubeAttributes { color_group })
+        .insert(Mover {
+            velocity: Vec3::new(rng.gen_range(-0.1..0.1), rng.gen_range(-0.1..0.1), rng.gen_range(-0.1..0.1)),
+        });
+    }
+}
