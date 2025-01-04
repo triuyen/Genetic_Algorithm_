@@ -14,7 +14,11 @@ const MAX_GENERATIONS:usize = 1000;
 
 // All components
 #[derive(Component,Debug)]
+<<<<<<< HEAD
 struct CubeAttributes {
+=======
+pub struct CubeAttributes {
+>>>>>>> aa48700 (initial commit)
     color_group: u8, // Attribute to determine the color group
 }
 
@@ -23,6 +27,7 @@ struct Mover {
     velocity: Vec3,
 }
 
+<<<<<<< HEAD
 #[derive(Default)]
 struct Individual {
     genes: String,
@@ -31,15 +36,23 @@ struct Individual {
     color: Color,
 }
 
+=======
+>>>>>>> aa48700 (initial commit)
 
 pub struct InitPlugin;
 
 impl Plugin for InitPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_first_gen)
+<<<<<<< HEAD
             .add_systems(Update, move_cubes)
             .add_systems(Update, evaluate_fitness)
             .add_systems(Update, reproduction);
+=======
+            .add_systems(Update, move_cubes);
+            //.add_systems(Update, run_simulation);
+            //.add_systems(Update, reproduction);
+>>>>>>> aa48700 (initial commit)
     }
 }
 
@@ -154,16 +167,25 @@ fn move_cubes(mut query: Query<(&Mover, &mut Transform)>, time: Res<Time>) {
     }
 }
 
+<<<<<<< HEAD
 
 // evaluate weither the gene is yellow or not 
 // if not the gene will be removed. If any yellow they will be kept
 fn evaluate_fitness(
+=======
+// evaluate weither the gene is yellow or not __________________________________________________________
+pub fn evaluate_fitness(
+>>>>>>> aa48700 (initial commit)
     mut commands: Commands,
     mut query: Query<(Entity, &Handle<StandardMaterial>, Option<&Parent>, Option<&Children>)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let yellow = Color::srgb(1.0, 1.0, 0.0); // Yellow color definition
+<<<<<<< HEAD
 
+=======
+    println!("Running Evaluation fitness !");
+>>>>>>> aa48700 (initial commit)
     for (entity, material_handle, parent, children) in query.iter() {
         // Access material's base color
         let is_entity_yellow = if let Some(material) = materials.get(material_handle) {
@@ -211,9 +233,14 @@ fn evaluate_fitness(
 }
 
 
+<<<<<<< HEAD
 
 // Perform reproduction using arithmetic crossover __________________________________________________________
 fn reproduction(
+=======
+// Perform reproduction using arithmetic crossover __________________________________________________________
+pub fn reproduction(
+>>>>>>> aa48700 (initial commit)
     mut commands: Commands,
     mut query: Query<(&CubeAttributes, &Transform), With<ParentCube>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
