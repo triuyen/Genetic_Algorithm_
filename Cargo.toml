@@ -9,10 +9,7 @@ rand = "0.8"
 bevy_debug_grid = "0.6"
 bevy_egui = "=0.29.0"
 bevy_fly_cam = "0.1.0"
-<<<<<<< HEAD
-=======
 bevy_fly_camera = "0.10.0"
->>>>>>> aa48700 (initial commit)
 
 [profile.dev.package."*"]
 opt-level = 3
