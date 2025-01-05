@@ -1,23 +1,16 @@
-use bevy::{scene::ron::value::Float, transform::commands};
 use rand::Rng;
 use bevy::prelude::Color;
-use std::time::Duration;
-use std::thread;
 use bevy::{prelude::*, transform};
+use std::collections::HashMap;
 pub mod data_genom;
 
 // let's determine that we want at the end of the simulation yellow cubes sets only
 
-const POPULATION_SIZE:usize = 10;
-const TARGET:usize = 80;
-const MAX_GENERATIONS:usize = 1000;
+const POPULATION_SIZE:usize = 25;
+// const TARGET:usize = 80;
+// const MAX_GENERATIONS:usize = 1000;
 
 // All components
-#[derive(Component,Debug)]
-pub struct CubeAttributes {
-    color_group: u8, // Attribute to determine the color group
-}
-
 #[derive(Component)]
 struct Mover {
     velocity: Vec3,
@@ -29,16 +22,21 @@ pub struct InitPlugin;
 impl Plugin for InitPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, spawn_first_gen)
-            .add_systems(Update, move_cubes);
-            //.add_systems(Update, run_simulation);
-            //.add_systems(Update, reproduction);
+            .add_systems(Update, move_cubes)
+            .add_systems(Update, evaluate_fitness)
+            .add_systems(Update, selective_reproduction);
     }
 }
 
-#[derive(Component)]
+#[derive(Component,Debug)]
 struct ParentCube;
-#[derive(Component)]
+#[derive(Component,Debug)]
 struct ChildCube;
+
+#[derive(Component,Debug)]
+pub struct CubeAttributes {
+    color_group: u8, // Attribute to determine the color group
+}
 
 fn spawn_first_gen(
     mut commands: Commands,
@@ -79,27 +77,31 @@ fn spawn_first_gen(
             .insert(Mover { velocity })
             .insert(ParentCube)
             .id(); // Save the entity ID to use as a parent
-
-        // Generate the material for the child (cube 2)
-        let child_color_group = rng.gen_range(0..5); // Random color group for the child cube
-        let child_material = generate_material(child_color_group, &mut materials);
-
-        // Spawn the second mesh slightly offset from the first
-        let children = commands.spawn(PbrBundle {
-            mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-            material: child_material,
-            transform: Transform {
-                translation: Vec3::new(1.0, 0.0, 0.0), //+ Vec3::new(0.01, 0.0, 0.0), // Offset to the side
-                scale: Vec3::splat(1.0),
+        
+        // Spawn the specified number of child cubes
+        for i in 0..5 {
+            // Generate a random color group for each child
+            let child_color_group = rng.gen_range(0..5);
+            let child_material = generate_material(child_color_group, &mut materials);
+            
+            let offset = Vec3::new(i as f32 * 1.0, 0.0, 0.0); // Apply a 1.5 unit offset to each child
+            
+            let child_entity = commands.spawn(PbrBundle {
+                mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+                material: child_material,
+                transform: Transform {
+                    translation: Vec3::new(1.0, 0.0, 0.0) + offset, // Apply offset to parent position
+                    scale: Vec3::splat(1.0),
+                    ..default()
+                },
                 ..default()
-            },
-            ..default()
-        })
-        .insert(ChildCube)
-        .id();
+            })
+            .insert(ChildCube)
+            .id();
 
         // Parent the child to the parent cube
-        commands.entity(parent_entity).add_child(children);
+        commands.entity(parent_entity).add_child(child_entity);
+    }
     }
 }
 
@@ -124,27 +126,49 @@ fn generate_material(
     })
 }
 
-// Update the cubes' positions
-fn move_cubes(mut query: Query<(&Mover, &mut Transform)>, time: Res<Time>) {
-    for (mover, mut transform) in query.iter_mut() {
+// // Update the cubes' positions
+// fn move_cubes(mut query: Query<(&Mover, &mut Transform)>, time: Res<Time>) {
+//     for (mover, mut transform) in query.iter_mut() {
+//         transform.translation += mover.velocity * time.delta_seconds();
+
+//         // Keep the cubes within bounds (-5, 5)
+//         if transform.translation.x.abs() > 5.0 {
+//             transform.translation.x = transform.translation.x.signum() * 20.0;
+//         }
+//         if transform.translation.y.abs() > 5.0 {
+//             transform.translation.y = transform.translation.y.signum() * 20.0;
+//         }
+//         if transform.translation.z.abs() > 5.0 {
+//             transform.translation.z = transform.translation.z.signum() * 20.0;
+//         }
+//         // Limit the movement to within a 30x30x30 space
+//         transform.translation.x = transform.translation.x.clamp(-30.0, 30.0);
+//         transform.translation.y = transform.translation.y.clamp(-30.0, 30.0);
+//         transform.translation.z = transform.translation.z.clamp(-30.0, 30.0);
+//     }
+// }
+
+fn move_cubes(mut query: Query<(&mut Mover, &mut Transform)>, time: Res<Time>) {
+    for (mut mover, mut transform) in query.iter_mut() {
+        // Update position based on velocity
         transform.translation += mover.velocity * time.delta_seconds();
 
-        // Keep the cubes within bounds (-5, 5)
-        if transform.translation.x.abs() > 5.0 {
-            transform.translation.x = transform.translation.x.signum() * 20.0;
+        // Check for boundary collisions and reverse velocity if necessary
+        if transform.translation.x <= -7.0 || transform.translation.x >= 7.0 {
+            mover.velocity.x = -mover.velocity.x; // Reverse X velocity
+            transform.translation.x = transform.translation.x.clamp(-7.0, 7.0); // Ensure within bounds
         }
-        if transform.translation.y.abs() > 5.0 {
-            transform.translation.y = transform.translation.y.signum() * 20.0;
+        if transform.translation.y <= -7.0 || transform.translation.y >= 7.0 {
+            mover.velocity.y = -mover.velocity.y; // Reverse Y velocity
+            transform.translation.y = transform.translation.y.clamp(-7.0, 7.0); // Ensure within bounds
         }
-        if transform.translation.z.abs() > 5.0 {
-            transform.translation.z = transform.translation.z.signum() * 20.0;
+        if transform.translation.z <= -7.0 || transform.translation.z >= 7.0 {
+            mover.velocity.z = -mover.velocity.z; // Reverse Z velocity
+            transform.translation.z = transform.translation.z.clamp(-7.0, 7.0); // Ensure within bounds
         }
-        // Limit the movement to within a 30x30x30 space
-        transform.translation.x = transform.translation.x.clamp(-30.0, 30.0);
-        transform.translation.y = transform.translation.y.clamp(-30.0, 30.0);
-        transform.translation.z = transform.translation.z.clamp(-30.0, 30.0);
     }
 }
+
 
 // evaluate weither the gene is yellow or not __________________________________________________________
 pub fn evaluate_fitness(
@@ -198,53 +222,113 @@ pub fn evaluate_fitness(
             }
         }
     }
+    
 }
 
 
+// A custom component for the color group
+#[derive(Component)]
+pub struct ColorGroup(pub u8);
+
 // Perform reproduction using arithmetic crossover __________________________________________________________
-pub fn reproduction(
+pub fn selective_reproduction(
     mut commands: Commands,
-    mut query: Query<(&CubeAttributes, &Transform), With<ParentCube>>,
+    mut query: Query<(Entity, &Handle<StandardMaterial>, Option<&Parent>, Option<&Children>, Option<&Transform>, Option<&ColorGroup>)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    let mut rng = rand::thread_rng();
-    let mut new_cubes = Vec::new();
-    let parents: Vec<_> = query.iter().collect();
+    let mut parent_to_children: HashMap<Entity, Vec<Entity>> = HashMap::new();
+    let mut parent_entities: Vec<Entity> = Vec::new();
 
-    // Pair up parents for crossover
-    for i in (0..parents.len()).step_by(2) {
-        if i + 1 < parents.len() {
-            let (parent1, transform1) = parents[i];
-            let (parent2, transform2) = parents[i + 1];
+    for (entity, _material_handle, parent, children, _,_) in query.iter() {
+        if let Some(parent) = parent {
+            let parent_entity = parent.get(); // Get the parent entity
 
-            // Arithmetic crossover for color groups
-            let alpha = rng.gen_range(0.0..=1.0);
-            let child_color_group = (alpha * parent1.color_group as f32
-                + (1.0 - alpha) * parent2.color_group as f32)
-                .round() as u8;
+            // Associate this entity as a child to the parent
+            parent_to_children
+                .entry(parent_entity)
+                .or_insert_with(Vec::new);
+                
+        }
 
-            let child_position = (transform1.translation + transform2.translation) / 2.0;
-
-            new_cubes.push((child_color_group, child_position));
+        if let Some(children) = children {
+            for &child in children.iter() {
+                println!("current Child : {:?} ", &child);
+                // Add this entity to the parent-child map
+                parent_to_children
+                    .entry(entity)
+                    .or_insert_with(Vec::new)
+                    .push(child);
+            }
         }
     }
 
-    // Spawn new cubes
+    // Print parent-child relationships for debugging
+    // for (parent, children) in &parent_to_children {
+    //     println!("Parent: {:?}, Children: {:?}", parent, children);
+    // }
+    
+    for e in &parent_entities{
+        println!("Parent entities : {:?}", e);
+    }
+
+    // Perform crossover for each pair of parents
+    let mut rng = rand::thread_rng();
+    let mut new_cubes: Vec<(u8, Vec3)> = Vec::new();
+
+    for i in (0..parent_entities.len()).step_by(2) {
+        if i + 1 < parent_entities.len() {
+            let parent1 = parent_entities[i];
+            let parent2 = parent_entities[i + 1];
+
+            if let (
+                Ok((_, _, _, _, Some(transform1), Some(color_group1))),
+                Ok((_, _, _, _, Some(transform2), Some(color_group2))),
+            ) = (query.get(parent1), query.get(parent2))
+            {
+                // Gene slicing using arithmetic crossover
+                let slice_point = rng.gen_range(0.0..=1.0);
+
+                // Sliced color group
+                let child_color_group = if slice_point < 0.5 {
+                    color_group1.0
+                } else {
+                    color_group2.0
+                };
+
+                // Sliced position (weighted average based on slice point)
+                let child_position = Vec3::new(
+                    transform1.translation.x * slice_point
+                        + transform2.translation.x * (1.0 - slice_point),
+                    transform1.translation.y * slice_point
+                        + transform2.translation.y * (1.0 - slice_point),
+                    transform1.translation.z * slice_point
+                        + transform2.translation.z * (1.0 - slice_point),
+                );
+
+                // Add new cube data
+                println!("Child color group : {:?} ", child_color_group);
+                println!("Child position : {:?}", child_position);
+                new_cubes.push((child_color_group, child_position));
+            }
+        }
+    }
+
+    // Spawn new child entities based on the recomposed genes
     for (color_group, position) in new_cubes {
-        let material = generate_material(color_group, &mut materials);
+        // Generate a material based on the color group
+        let child_material = generate_material(color_group, &mut materials);
+
+        // Spawn new child cube
         commands.spawn(PbrBundle {
             mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-            material,
+            material: child_material,
             transform: Transform {
                 translation: position,
+                scale: Vec3::splat(1.5),
                 ..default()
             },
             ..default()
-        })
-        .insert(CubeAttributes { color_group })
-        .insert(Mover {
-            velocity: Vec3::new(rng.gen_range(-0.1..0.1), rng.gen_range(-0.1..0.1), rng.gen_range(-0.1..0.1)),
         });
-    }
+    }   
 }

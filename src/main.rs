@@ -3,9 +3,7 @@ use simulation::InitPlugin;
 use world::WorldPlugin;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use bevy_fly_cam::FlyCamPlugin;
-
 use bevy_debug_grid::*;
-
 mod simulation;
 mod world;
 
@@ -27,10 +25,12 @@ fn e_gui(
     materials: ResMut<Assets<StandardMaterial>>,
     query: Query<(Entity, &Handle<StandardMaterial>, Option<&Parent>, Option<&Children>)>,
     ) {
-    let value = simulation::evaluate_fitness(commands, query, materials);
+
     egui::Window::new("Example Window").show(contexts.ctx_mut(), |ui| {
         if ui.button("Run_simulation").clicked() {
-            value;
+            println!("Test");
+            //simulation::evaluate_fitness(commands, query, materials);
+            //simulation::selective_reproduction(commands, query, materials, meshes);
         }
     });
 }
