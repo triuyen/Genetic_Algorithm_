@@ -1,8 +1,9 @@
-use rand::Rng;
+use bevy_egui::egui::generate_loader_id;
 use bevy::prelude::Color;
 use bevy::{prelude::*, transform};
 use std::collections::HashMap;
 pub mod data_genom;
+use rand::Rng;
 
 // let's determine that we want at the end of the simulation yellow cubes sets only
 
@@ -15,16 +16,16 @@ const POPULATION_SIZE:usize = 25;
 struct Mover {
     velocity: Vec3,
 }
-
-
 pub struct InitPlugin;
 
 impl Plugin for InitPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_first_gen)
+        app.insert_resource(GenerationNumber { current_gen: 1 })
+            .add_systems(Startup, spawn_first_gen)
             .add_systems(Update, move_cubes)
             .add_systems(Update, evaluate_fitness)
             .add_systems(Update, selective_reproduction);
+            //.add_systems(Update, get_generation_num);
     }
 }
 
@@ -37,6 +38,17 @@ struct ChildCube;
 pub struct CubeAttributes {
     color_group: u8, // Attribute to determine the color group
 }
+
+#[derive(Resource)]
+struct GenerationNumber{
+    current_gen: usize,
+}
+
+// impl Default for GenerationNumber{
+//     fn default() -> Self{
+//         GenerationNumber{ current_gen: 1}
+//     } 
+// }
 
 fn spawn_first_gen(
     mut commands: Commands,
@@ -59,7 +71,7 @@ fn spawn_first_gen(
         let parent_position = Vec3::new(random_x, random_y, random_z);
 
         // Generate the material for the parent (cube 1)
-        let parent_color_group = rng.gen_range(0..5); // Random color group for the parent cube
+        let parent_color_group = rng.gen_range(0..6); // Random color group for the parent cube
         let parent_material = generate_material(parent_color_group, &mut materials);
 
         // Spawn the parent cube
@@ -126,27 +138,6 @@ fn generate_material(
     })
 }
 
-// // Update the cubes' positions
-// fn move_cubes(mut query: Query<(&Mover, &mut Transform)>, time: Res<Time>) {
-//     for (mover, mut transform) in query.iter_mut() {
-//         transform.translation += mover.velocity * time.delta_seconds();
-
-//         // Keep the cubes within bounds (-5, 5)
-//         if transform.translation.x.abs() > 5.0 {
-//             transform.translation.x = transform.translation.x.signum() * 20.0;
-//         }
-//         if transform.translation.y.abs() > 5.0 {
-//             transform.translation.y = transform.translation.y.signum() * 20.0;
-//         }
-//         if transform.translation.z.abs() > 5.0 {
-//             transform.translation.z = transform.translation.z.signum() * 20.0;
-//         }
-//         // Limit the movement to within a 30x30x30 space
-//         transform.translation.x = transform.translation.x.clamp(-30.0, 30.0);
-//         transform.translation.y = transform.translation.y.clamp(-30.0, 30.0);
-//         transform.translation.z = transform.translation.z.clamp(-30.0, 30.0);
-//     }
-// }
 
 fn move_cubes(mut query: Query<(&mut Mover, &mut Transform)>, time: Res<Time>) {
     for (mut mover, mut transform) in query.iter_mut() {
@@ -168,7 +159,6 @@ fn move_cubes(mut query: Query<(&mut Mover, &mut Transform)>, time: Res<Time>) {
         }
     }
 }
-
 
 // evaluate weither the gene is yellow or not __________________________________________________________
 pub fn evaluate_fitness(
@@ -225,17 +215,20 @@ pub fn evaluate_fitness(
     
 }
 
-
 // A custom component for the color group
 #[derive(Component)]
 pub struct ColorGroup(pub u8);
 
+// TODO: counting generations
 // Perform reproduction using arithmetic crossover __________________________________________________________
 pub fn selective_reproduction(
     mut commands: Commands,
-    mut query: Query<(Entity, &Handle<StandardMaterial>, Option<&Parent>, Option<&Children>, Option<&Transform>, Option<&ColorGroup>)>,
+    mut query: Query<(Entity, &Handle<StandardMaterial>, 
+                        Option<&Parent>, Option<&Children>, 
+                        Option<&Transform>, Option<&ColorGroup>)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut generate_counter: ResMut<GenerationNumber>,
 ) {
     let mut parent_to_children: HashMap<Entity, Vec<Entity>> = HashMap::new();
     let mut parent_entities: Vec<Entity> = Vec::new();
@@ -248,12 +241,11 @@ pub fn selective_reproduction(
             parent_to_children
                 .entry(parent_entity)
                 .or_insert_with(Vec::new);
-                
         }
 
         if let Some(children) = children {
             for &child in children.iter() {
-                println!("current Child : {:?} ", &child);
+                //println!("current Child : {:?} ", &child);
                 // Add this entity to the parent-child map
                 parent_to_children
                     .entry(entity)
@@ -262,11 +254,6 @@ pub fn selective_reproduction(
             }
         }
     }
-
-    // Print parent-child relationships for debugging
-    // for (parent, children) in &parent_to_children {
-    //     println!("Parent: {:?}, Children: {:?}", parent, children);
-    // }
     
     for e in &parent_entities{
         println!("Parent entities : {:?}", e);
@@ -331,4 +318,6 @@ pub fn selective_reproduction(
             ..default()
         });
     }   
+    generate_counter.current_gen += 1;
+    println!("Generation number : {:?}", generate_counter.current_gen);
 }
