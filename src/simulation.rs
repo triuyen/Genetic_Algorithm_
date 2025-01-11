@@ -1,7 +1,6 @@
-use bevy_egui::egui::generate_loader_id;
 use bevy::prelude::Color;
-use std::borrow::Borrow;
-use bevy::{prelude::*, transform};
+use bevy::{color, prelude::*};
+use std::time::Duration;
 use std::collections::HashMap;
 pub mod data_genom;
 use rand::Rng;
@@ -23,8 +22,8 @@ impl Plugin for InitPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(GenerationNumber { current_gen: 1 })
             .add_systems(Startup, spawn_first_gen)
-            //.add_systems(Update, run_simulation);
-            .add_systems(Startup, evaluate_fitness)
+            //.add_systems(Update, run_simulation)
+            .add_systems(Update, evaluate_fitness)
             .add_systems(Update, move_cubes)
             .add_systems(Update, selective_reproduction);
             //.add_systems(Update, get_generation_num);
@@ -71,40 +70,46 @@ impl Default for SimulationState {
 
 // fn run_simulation(
 //     mut commands: Commands,
-//     mut query_fitness: Query<(Entity, &Handle<StandardMaterial>, Option<&Parent>, Option<&Children>)>,
-//     mut query_reproduction: Query<(Entity, &Handle<StandardMaterial>, Option<&Parent>, Option<&Children>, Option<&Transform>, Option<&ColorGroup>)>,
-//     mut materials: &ResMut<Assets<StandardMaterial>>,
+//     mut materials: ResMut<Assets<StandardMaterial>>,
 //     mut meshes: ResMut<Assets<Mesh>>,
 //     mut generation_number: ResMut<GenerationNumber>,
-//     mut simulation_state: ResMut<SimulationState>,
+//     mut query: Query<(Entity, &Handle<StandardMaterial>, Option<&Parent>, Option<&Children>, Option<&Transform>, Option<&ColorGroup>)>,
 // ) {
-//     if simulation_state.running {
-//         {
-//             // Use materials for evaluate_fitness
-//             evaluate_fitness(commands, query_fitness, materials);
-        
-//             // Materials can now be used again for selective_reproduction
-//             selective_reproduction(
-//                 commands,
-//                 query_reproduction,
-//                 materials,
-//                 meshes,
-//                 generation_number,
-//             );
-//         }
+//     const MAX_GENERATIONS: usize = 30;
 
-//         simulation_state.current_generation += 1;
-//         println!(
-//             "Completed Generation {}",
-//             simulation_state.current_generation
+//     while generation_number.current_gen <= MAX_GENERATIONS {
+//         println!("Running Generation {}", generation_number.current_gen);
+
+//         // Step 1: Evaluate Fitness 
+//         let mut value = evaluate_fitness(&mut commands, &mut query, &mut materials);
+//         println!("Fitness evaluation completed for Generation {}", generation_number.current_gen);
+//         value;
+
+//         // Step 2: Perform Selective Reproduction
+//         let mut value = selective_reproduction(
+//             &mut commands,
+//             &mut query,
+//             &mut materials,
+//             &mut meshes,
+//          &mut generation_number,
 //         );
 
-//         if simulation_state.current_generation >= simulation_state.max_generations {
-//             simulation_state.running = false;
-//             println!("Simulation complete!");
+//         value;
+//         println!("Selective reproduction completed for Generation {}", generation_number.current_gen);
+
+//         // Increment generation counter
+//         generation_number.current_gen += 1;
+
+//         // std::thread::sleep(Duration::from_secs(2)); // Pauses for 1 second
+
+//         // Break the loop if the termination condition is met
+//         if generation_number.current_gen > MAX_GENERATIONS {
+//             println!("Simulation completed after {} generations.", MAX_GENERATIONS);
+//             break;
 //         }
 //     }
 // }
+
 
 fn spawn_first_gen(
     mut commands: Commands,
@@ -144,6 +149,7 @@ fn spawn_first_gen(
             })
             .insert(Mover { velocity })
             .insert(ParentCube)
+            .insert(ColorGroup(parent_color_group))
             .id(); // Save the entity ID to use as a parent
         
         // Spawn the specified number of child cubes
@@ -165,6 +171,7 @@ fn spawn_first_gen(
                 ..default()
             })
             .insert(ChildCube)
+            .insert(ColorGroup(child_color_group))
             .id();
 
         // Parent the child to the parent cube
@@ -219,13 +226,14 @@ fn move_cubes(mut query: Query<(&mut Mover, &mut Transform)>, time: Res<Time>) {
 // evaluate weither the gene is yellow or not __________________________________________________________
 pub fn evaluate_fitness(
     mut commands: Commands,
-    query: Query<(Entity, &Handle<StandardMaterial>, Option<&Parent>, Option<&Children>)>,
-    materials: ResMut<Assets<StandardMaterial>>,
+    mut query: Query<(Entity, &Handle<StandardMaterial>, 
+                        Option<&Parent>, Option<&Children>, 
+                        Option<&Transform>, Option<&ColorGroup>)>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let yellow = Color::srgb(1.0, 1.0, 0.0); // Yellow color definition
-    println!("Running Evaluation fitness !");
 
-    for (entity, material_handle, parent, children) in query.iter() {
+    for (entity, material_handle, parent, children,_,_) in query.iter() {
         // Access material's base color
         let is_entity_yellow = if let Some(material) = materials.get(material_handle) {
             material.base_color == yellow
@@ -236,7 +244,7 @@ pub fn evaluate_fitness(
         // Parent-Child logic
         if let Some(parent) = parent {
             // If the entity is a child, handle based on the parent's status
-            if let Ok((_, parent_material_handle, _, _)) = query.get(parent.get()) {
+            if let Ok((_, parent_material_handle, _, _,_,_)) = query.get(parent.get()) {
                 let is_parent_yellow = if let Some(parent_material) = materials.get(parent_material_handle) {
                     parent_material.base_color == yellow
                 } else {
@@ -253,7 +261,7 @@ pub fn evaluate_fitness(
             let mut has_yellow_child = false;
 
             for &child in children.iter() {
-                if let Ok((_, child_material_handle, _, _)) = query.get(child) {
+                if let Ok((_, child_material_handle, _, _,_,_)) = query.get(child) {
                     if let Some(child_material) = materials.get(child_material_handle) {
                         if child_material.base_color == yellow {
                             has_yellow_child = true;
@@ -273,10 +281,10 @@ pub fn evaluate_fitness(
 }
 
 // A custom component for the color group
-#[derive(Component)]
+#[derive(Component,Debug, Clone, Copy)]
 pub struct ColorGroup(pub u8);
 
-// TODO: counting generations
+// TODO: the problem is not the looping it's inside the selective reproduction function
 // Perform reproduction using arithmetic crossover __________________________________________________________
 pub fn selective_reproduction(
     mut commands: Commands,
@@ -287,10 +295,13 @@ pub fn selective_reproduction(
     mut meshes: ResMut<Assets<Mesh>>,
     mut generate_counter: ResMut<GenerationNumber>,
 ) {
+    // Map to store parent-child relationships
     let mut parent_to_children: HashMap<Entity, Vec<Entity>> = HashMap::new();
+    //Creates an empty vector parent_entities to hold parent entities.
     let mut parent_entities: Vec<Entity> = Vec::new();
 
-    for (entity, _material_handle, parent, children, _,_) in query.iter() {
+
+    for (entity, _material_handle, parent, children, _,_colorgroup) in query.iter() {
         if let Some(parent) = parent {
             let parent_entity = parent.get(); // Get the parent entity
 
@@ -298,11 +309,13 @@ pub fn selective_reproduction(
             parent_to_children
                 .entry(parent_entity)
                 .or_insert_with(Vec::new);
+        } else {
+            // If the entity does not have a parent, it's a potential root (parent entity)
+            parent_entities.push(entity);
         }
 
         if let Some(children) = children {
             for &child in children.iter() {
-                //println!("current Child : {:?} ", &child);
                 // Add this entity to the parent-child map
                 parent_to_children
                     .entry(entity)
@@ -312,13 +325,12 @@ pub fn selective_reproduction(
         }
     }
     
-    for e in &parent_entities{
-        println!("Parent entities : {:?}", e);
-    }
-
+  
     // Perform crossover for each pair of parents
     let mut rng = rand::thread_rng();
     let mut new_cubes: Vec<(u8, Vec3)> = Vec::new();
+
+    //println!("parent entities  ----- :{:?}",parent_entities);
 
     for i in (0..parent_entities.len()).step_by(2) {
         if i + 1 < parent_entities.len() {
@@ -326,13 +338,13 @@ pub fn selective_reproduction(
             let parent2 = parent_entities[i + 1];
 
             if let (
-                Ok((_, _, _, _, Some(transform1), Some(color_group1))),
-                Ok((_, _, _, _, Some(transform2), Some(color_group2))),
+                Ok((_, _, _, _, Some(transform1),Some(color_group1))), //, Some(color_group1))),
+                Ok((_, _, _, _, Some(transform2),Some(color_group2))),  //, Some(color_group2))),
             ) = (query.get(parent1), query.get(parent2))
             {
+
                 // Gene slicing using arithmetic crossover
                 let slice_point = rng.gen_range(0.0..=1.0);
-
                 // Sliced color group
                 let child_color_group = if slice_point < 0.5 {
                     color_group1.0
@@ -354,7 +366,7 @@ pub fn selective_reproduction(
                 let (mutated_position, mutated_color_group) =
                 mutate(child_position, child_color_group, 0.1); // Mutation rate: 10%
 
-                // Add new cube data
+                // // Add new cube data
                 println!("Child color group : {:?} ", child_color_group);
                 println!("Child position : {:?}", child_position);
                 new_cubes.push((child_color_group, child_position));
@@ -383,9 +395,11 @@ pub fn selective_reproduction(
     println!("Generation number : {:?}", generate_counter.current_gen);
 }
 
+
+
 fn mutate(position: Vec3, color_group: u8, mutation_rate: f32) -> (Vec3, u8) {
     let mut rng = rand::thread_rng();
-
+    println!("Mutation rate : {:?}", mutation_rate);    
     // Mutate position: add small random changes within a range
     let mutated_position = Vec3::new(
         position.x + rng.gen_range(-mutation_rate..mutation_rate),
@@ -402,3 +416,4 @@ fn mutate(position: Vec3, color_group: u8, mutation_rate: f32) -> (Vec3, u8) {
 
     (mutated_position, mutated_color_group)
 }
+
